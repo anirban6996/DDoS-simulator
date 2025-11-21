@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Shield, Activity, Server, Users, Play, Square, ShieldCheck, TrendingUp, Cpu, AlertOctagon, AlertTriangle, Zap, Clock, Globe, Power } from 'lucide-react';
+import { Shield, Activity, Server, Users, Play, Square, ShieldCheck, TrendingUp, Cpu, AlertOctagon, AlertTriangle, Zap, Clock, Globe, Power, ArrowDownUp } from 'lucide-react';
 
 const App = () => {
   // --- State ---
   const [isAttacking, setIsAttacking] = useState(false);
-  const [isLegitActive, setIsLegitActive] = useState(true); // New: Control for legit traffic
+  const [isLegitActive, setIsLegitActive] = useState(true); 
   const [mitigationEnabled, setMitigationEnabled] = useState(false);
   
   // Sliders (0-100 scale)
@@ -14,9 +14,9 @@ const App = () => {
   const [attackType, setAttackType] = useState('volumetric'); // volumetric (udp), application (http)
   const [scalingMode, setScalingMode] = useState('off'); // 'off', 'standard', 'ultra'
 
-  const [serverHealth, setServerHealth] = useState(100); // Represents "Availability"
+  const [serverHealth, setServerHealth] = useState(100); 
   const [serverLoad, setServerLoad] = useState(0); 
-  const [serverLatency, setServerLatency] = useState(24); // ms
+  const [serverLatency, setServerLatency] = useState(24); 
   const [packets, setPackets] = useState([]);
   const [wafIntegrity, setWafIntegrity] = useState(100); 
 
@@ -24,7 +24,10 @@ const App = () => {
     totalRequests: 0,
     blockedRequests: 0,
     droppedLegitimate: 0,
-    successfulLegitimate: 0
+    successfulLegitimate: 0,
+    currentRPS: 0,
+    currentLegitRPS: 0,
+    currentAttackRPS: 0
   });
   const [serverStatus, setServerStatus] = useState('ONLINE');
 
@@ -41,14 +44,12 @@ const App = () => {
   
   // --- REAL WORLD DATA CORE ---
   
-  // 1. Infrastructure Capacities (RPS - Requests Per Second)
   const CAPACITIES = {
     off: 50000,        // Single optimized NGINX/Apache server
     standard: 500000,  // Enterprise Load Balancer / Small Cluster
     ultra: 10000000    // Global Anycast Edge Network (Cloudflare/AWS scale)
   };
 
-  // 2. Attack Traffic Calculator (Logarithmic Scale)
   const calculateAttackTraffic = (intensity) => {
     const minRPS = 1000;
     const maxRPS = 20000000;
@@ -68,15 +69,16 @@ const App = () => {
 
     // --- 1. Traffic Generation ---
     
-    // Legit Traffic: Now controlled by isLegitActive switch
     const legitFactor = isLegitActive ? (legitIntensity / 100) * 0.6 : 0; 
     const rawLegitRate = maxCapacity * legitFactor;
     
-    // Attack Traffic
     let rawAttackRate = 0;
     if (isAttacking) {
         rawAttackRate = calculateAttackTraffic(attackIntensity);
     }
+
+    // Calculate Total RPS for display
+    const currentRPS = rawLegitRate + rawAttackRate;
 
     // --- 2. Visual Spawning ---
     const canSpawnVisual = currentPackets.length < VISUAL_PARTICLE_LIMIT;
@@ -169,7 +171,10 @@ const App = () => {
       totalRequests: prev.totalRequests + Math.floor((totalDemand + blockedAttack) / 60), 
       blockedRequests: prev.blockedRequests + Math.floor(blockedAttack / 60),
       droppedLegitimate: prev.droppedLegitimate + Math.floor(legitDrops / 60),
-      successfulLegitimate: prev.successfulLegitimate + Math.floor(legitSuccess / 60)
+      successfulLegitimate: prev.successfulLegitimate + Math.floor(legitSuccess / 60),
+      currentRPS: Math.floor(currentRPS),
+      currentLegitRPS: Math.floor(rawLegitRate),
+      currentAttackRPS: Math.floor(rawAttackRate)
     }));
 
     const h = serverRef.current.health;
@@ -202,7 +207,7 @@ const App = () => {
   const formatNumber = (val) => {
     if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
     if (val >= 1000) return (val / 1000).toFixed(0) + 'k';
-    return Math.floor(val);
+    return Math.floor(val).toLocaleString();
   };
 
   const getStatusColor = () => {
@@ -234,7 +239,7 @@ const App = () => {
           </div>
           <div>
             <h1 className="text-lg md:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-              DDoS Simulator <span className="text-blue-500 font-mono text-sm bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">v6.1</span>
+              DDoS Simulator <span className="text-blue-500 font-mono text-sm bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">v6.2</span>
             </h1>
           </div>
         </div>
@@ -433,6 +438,26 @@ const App = () => {
         {/* Right Metrics */}
         <div className="lg:col-span-3 space-y-4">
           
+          {/* NEW CARD: Live Traffic */}
+          <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-xl shadow-lg">
+              <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase">Incoming Traffic</h3>
+                  <ArrowDownUp className="w-4 h-4 text-slate-500" />
+              </div>
+              <div className="text-3xl font-mono font-bold text-white flex items-baseline gap-2">
+                  {formatNumber(stats.currentRPS)} <span className="text-sm text-slate-500 font-sans font-normal">req/s</span>
+              </div>
+              {/* Ratio Bar */}
+              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-3 flex">
+                  <div className="h-full bg-emerald-500 transition-all duration-300" style={{width: `${(stats.currentLegitRPS / (stats.currentRPS || 1)) * 100}%`}}></div>
+                  <div className="h-full bg-red-500 transition-all duration-300" style={{width: `${(stats.currentAttackRPS / (stats.currentRPS || 1)) * 100}%`}}></div>
+              </div>
+              <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
+                  <span className="text-emerald-500">{formatNumber(stats.currentLegitRPS)} Legit</span>
+                  <span className="text-red-500">{formatNumber(stats.currentAttackRPS)} Attack</span>
+              </div>
+          </div>
+
           {/* Availability / Health */}
           <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-xl shadow-lg">
              <div className="flex items-center justify-between mb-4"><h3 className="text-xs font-bold text-slate-400 uppercase">Service Availability</h3><Activity className="w-4 h-4 text-slate-500" /></div>
