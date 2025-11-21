@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  ddos-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ddos-sim-v6
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
